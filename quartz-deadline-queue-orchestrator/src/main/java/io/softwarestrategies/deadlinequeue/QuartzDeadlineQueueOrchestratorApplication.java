@@ -4,10 +4,10 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class QuartzScheduledEventSchedulerApplication {
+public class QuartzDeadlineQueueOrchestratorApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(QuartzScheduledEventSchedulerApplication.class, args);
+		SpringApplication.run(QuartzDeadlineQueueOrchestratorApplication.class, args);
 	}
 
 }

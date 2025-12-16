@@ -4,10 +4,10 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.softwarestrategies</groupId>
-    <artifactId>eventbridge-deadline-queue-mgr</artifactId>
+    <artifactId>quartz-deadline-queue-orchestrator</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>eventbridge-scheduledevent-processor</name>
-    <description>EventBridge ScheduledEvent Processor system</description>
+    <name>quart-scheduledevent-processor</name>
+    <description>Quartz ScheduledEvent Processor system</description>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -35,6 +35,14 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-quartz</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
         <!-- JSON Processing -->
@@ -78,6 +86,13 @@
             <version>${aws.sdk.version}</version>
         </dependency>
 
+        <!-- Database -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Odds-n-Ends -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -90,11 +105,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-test</artifactId>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
         </dependency>
     </dependencies>
 
