@@ -44,10 +44,12 @@ public class EventSchedulerService {
 	}
 
 	/**
-	 * Main polling loop that fetches and processes due events.  Runs at configured interval using virtual threads for
+	 * Main polling loop that fetches and processes due events. Runs at configured
+	 * interval using virtual threads for
 	 * execution.
 	 *
-	 * Using fixedRateString instead of fixedDelayString so that the necxt poll starts 1000ms AFTER the previous one
+	 * Using fixedRateString instead of fixedDelayString so that the necxt poll
+	 * starts 1000ms AFTER the previous one
 	 * started and not after it finished.
 	 */
 	@Scheduled(fixedRateString = "${app.scheduler.poll-interval-ms:1000}")
@@ -65,11 +67,7 @@ public class EventSchedulerService {
 
 			log.debug("Fetched {} events for execution", events.size());
 
-			events.stream()
-					.map(event -> CompletableFuture.runAsync(
-							() -> processEvent(event), eventProcessingExecutor))
-					.toList()
-					.forEach(CompletableFuture::join);
+			events.forEach(event -> CompletableFuture.runAsync(() -> processEvent(event), eventProcessingExecutor));
 
 		} catch (Exception e) {
 			log.error("Error in scheduler poll loop", e);
