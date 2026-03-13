@@ -16,11 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 
 /**
  * Kafka consumer service that handles the second phase of ingestion:
@@ -39,28 +38,17 @@ public class KafkaConsumerService {
 	private final Timer databaseBatchTimer;
 
 	/**
-	 * Versus simply using an LRU
+	 * Concurrent LRU Cache for message deduplication
 	 */
-	private final Set<String> recentMessageIds = Collections.newSetFromMap(
-			Collections.synchronizedMap(new LinkedHashMap<>(MAX_CACHE_SIZE, 0.75f, true) {
-				@Override
-				protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-					return size() > MAX_CACHE_SIZE;
-				}
-			})
-	);
-
-	private static final int MAX_CACHE_SIZE = 100000;
+	private final Cache<String, Boolean> recentMessageIds = Caffeine.newBuilder()
+			.maximumSize(100_000)
+			.build();
 
 	/**
 	 * Batch consumer for ingestion topic.
 	 * Processes messages in batches for high throughput.
 	 */
-	@KafkaListener(
-			topics = "${app.kafka.topics.ingestion}",
-			groupId = "${spring.kafka.consumer.group-id}",
-			containerFactory = "kafkaListenerContainerFactory"
-	)
+	@KafkaListener(topics = "${app.kafka.topics.ingestion}", groupId = "${spring.kafka.consumer.group-id}", containerFactory = "kafkaListenerContainerFactory")
 	@Transactional
 	public void consumeIngestionBatch(List<KafkaEventMessage> messages, Acknowledgment ack) {
 		if (messages == null || messages.isEmpty()) {
@@ -95,8 +83,10 @@ public class KafkaConsumerService {
 		}
 
 		/**
-		 * There is a tradeoff here versus using a single batch insert, but with individual save() calls you can isolate
-		 * failures. For the deduplication use case this is the right call since DLQ misrouting is worse than slightly
+		 * There is a tradeoff here versus using a single batch insert, but with
+		 * individual save() calls you can isolate
+		 * failures. For the deduplication use case this is the right call since DLQ
+		 * misrouting is worse than slightly
 		 * lower insert throughput.
 		 */
 		for (ScheduledEvent event : eventsToSave) {
@@ -131,7 +121,7 @@ public class KafkaConsumerService {
 	 */
 	private boolean isDuplicate(KafkaEventMessage message) {
 		// Check in-memory cache
-		if (recentMessageIds.contains(message.getMessageId())) {
+		if (recentMessageIds.getIfPresent(message.getMessageId()) != null) {
 			return true;
 		}
 
@@ -139,16 +129,15 @@ public class KafkaConsumerService {
 		return scheduledEventRepository.existsByUniqueKey(
 				message.getExternalJobId(),
 				message.getSource(),
-				message.getScheduledAt()
-		);
+				message.getScheduledAt());
 	}
 
 	/**
 	 * Track message ID for deduplication.
 	 */
 	private void trackMessageId(String messageId) {
-		// LRU eviction is handled automatically by the LinkedHashMap removeEldestEntry policy
-		recentMessageIds.add(messageId);
+		// Concurrent cache eviction is handled automatically by Caffeine
+		recentMessageIds.put(messageId, Boolean.TRUE);
 	}
 
 	/**
