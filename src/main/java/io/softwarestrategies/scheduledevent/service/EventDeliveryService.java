@@ -13,7 +13,13 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Set;
+
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 
 /**
  * Service responsible for delivering scheduled events to their destinations.
@@ -27,6 +33,7 @@ public class EventDeliveryService {
 
 	private final RestClient restClient;
 	private final KafkaProducerService kafkaProducerService;
+	private final CircuitBreakerRegistry circuitBreakerRegistry;
 	private final Counter httpDeliveryCounter;
 	private final Counter kafkaDeliveryCounter;
 	private final Timer eventDeliveryTimer;
@@ -43,6 +50,7 @@ public class EventDeliveryService {
 			return switch (event.getDeliveryType()) {
 				case HTTP -> deliverViaHttp(event);
 				case KAFKA -> deliverViaKafka(event);
+				default -> throw new IllegalArgumentException("Unknown delivery type: " + event.getDeliveryType());
 			};
 		} finally {
 			sample.stop(eventDeliveryTimer);
@@ -56,16 +64,29 @@ public class EventDeliveryService {
 		httpDeliveryCounter.increment();
 
 		try {
-			ResponseEntity<Void> response = restClient.post()
+			// Extract domain for CircuitBreaker scoping
+			String domain = extractDomain(event.getDestination());
+			CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker(domain);
+
+			// Wrap the HTTP request in the CircuitBreaker
+			ResponseEntity<Void> response = circuitBreaker.executeSupplier(() -> restClient.post()
 					.uri(event.getDestination())
 					.contentType(MediaType.APPLICATION_JSON)
 					.body(event.getPayload())
 					.retrieve()
-					.toBodilessEntity();
+					.toBodilessEntity());
 
 			log.debug("HTTP delivery successful. EventId: {}, Status: {}",
 					event.getId(), response.getStatusCode());
 			return DeliveryResult.ofSuccess();
+
+		} catch (CallNotPermittedException ex) {
+			// Circuit Breaker is OPEN. Fast-fail without attempting HTTP.
+			String error = "Circuit Breaker OPEN for domain. Delivery aborted.";
+			log.warn("HTTP delivery fast-failed (Circuit Breaker). EventId: {}, Error: {}",
+					event.getId(), error);
+			// It is retriable later when circuit closes
+			return DeliveryResult.ofFailure(error, true);
 
 		} catch (RestClientResponseException ex) {
 			String error = String.format("HTTP %d: %s", ex.getStatusCode().value(), ex.getStatusText());
@@ -92,8 +113,7 @@ public class EventDeliveryService {
 			kafkaProducerService.sendToExternalTopic(
 					event.getDestination(),
 					event.getExternalJobId(),
-					event.getPayload()
-			).join();  // Block on virtual thread
+					event.getPayload()).join(); // Block on virtual thread
 
 			log.debug("Kafka delivery successful. EventId: {}, Topic: {}",
 					event.getId(), event.getDestination());
@@ -134,6 +154,19 @@ public class EventDeliveryService {
 			Thread.sleep(millis);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
+		}
+	}
+
+	/**
+	 * Extracts the host domain from a URL to use as the CircuitBreaker name.
+	 */
+	private String extractDomain(String url) {
+		try {
+			URI uri = new URI(url);
+			String host = uri.getHost();
+			return host != null ? host : "unknown-domain";
+		} catch (URISyntaxException e) {
+			return "invalid-url";
 		}
 	}
 
