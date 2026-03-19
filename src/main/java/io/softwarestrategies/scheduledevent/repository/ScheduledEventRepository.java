@@ -109,9 +109,12 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	@Modifying
 	@Query(value = """
 			DELETE FROM scheduled_events
-			WHERE status IN ('COMPLETED', 'DEAD_LETTER', 'CANCELLED')
-			AND executed_at < :cutoff
-			LIMIT :batchSize
+			WHERE (id, partition_key) IN (
+			    SELECT id, partition_key FROM scheduled_events
+			    WHERE status IN ('COMPLETED', 'DEAD_LETTER', 'CANCELLED')
+			    AND executed_at < :cutoff
+			    LIMIT :batchSize
+			)
 			""", nativeQuery = true)
 	int deleteCompletedEventsBefore(@Param("cutoff") Instant cutoff, @Param("batchSize") int batchSize);
 
@@ -220,7 +223,7 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 				:#{#event.destination}, cast(:#{#event.payload} as jsonb),
 				:#{#event.status.name()}, :#{#event.retryCount}, :#{#event.maxRetries},
 				:#{#event.createdAt}, :#{#event.updatedAt}, :#{#event.partitionKey}
-			) ON CONFLICT (external_job_id, source, scheduled_at) DO NOTHING
+			) ON CONFLICT (external_job_id, source, scheduled_at, partition_key) DO NOTHING
 			""", nativeQuery = true)
 	int insertIgnoreDuplicate(@Param("event") ScheduledEvent event);
 }

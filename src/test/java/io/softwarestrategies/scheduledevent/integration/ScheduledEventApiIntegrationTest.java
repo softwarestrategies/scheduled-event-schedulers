@@ -8,7 +8,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -22,8 +24,9 @@ import static org.awaitility.Awaitility.await;
 
 /**
  * Integration tests for the REST API endpoints.
- * Uses WebTestClient for modern Spring Boot 4 testing.
+ * Uses RestClient for synchronous HTTP testing with virtual threads.
  */
+@SuppressWarnings("rawtypes")
 class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 
 	@Autowired
@@ -43,22 +46,21 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 		ScheduledEventRequest request = createTestRequest();
 
 		// When/Then
-		webTestClient.post()
+		ResponseEntity<ApiResponse> response = restClient.post()
 				.uri(BASE_URL)
 				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue(request)
-				.exchange()
-				.expectStatus().isAccepted()
-				.expectBody(ApiResponse.class)
-				.value(response -> assertThat(response.isSuccess()).isTrue());
+				.body(request)
+				.retrieve()
+				.toEntity(ApiResponse.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+		assertThat(response.getBody().isSuccess()).isTrue();
 
 		// Wait for event to be persisted via Kafka
 		await().atMost(10, TimeUnit.SECONDS)
 				.pollInterval(500, TimeUnit.MILLISECONDS)
-				.untilAsserted(() -> {
-					assertThat(repository.findByExternalJobId(request.getExternalJobId()))
-							.isPresent();
-				});
+				.untilAsserted(() ->
+						assertThat(repository.findByExternalJobId(request.getExternalJobId())).isPresent());
 	}
 
 	@Test
@@ -66,29 +68,24 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 	void submitBatchEvents() {
 		// Given
 		BatchScheduledEventRequest batchRequest = BatchScheduledEventRequest.builder()
-				.events(List.of(
-						createTestRequest(),
-						createTestRequest(),
-						createTestRequest()
-				))
+				.events(List.of(createTestRequest(), createTestRequest(), createTestRequest()))
 				.build();
 
 		// When/Then
-		webTestClient.post()
+		ResponseEntity<ApiResponse> response = restClient.post()
 				.uri(BASE_URL + "/batch")
 				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue(batchRequest)
-				.exchange()
-				.expectStatus().isAccepted()
-				.expectBody(ApiResponse.class)
-				.value(response -> assertThat(response.isSuccess()).isTrue());
+				.body(batchRequest)
+				.retrieve()
+				.toEntity(ApiResponse.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+		assertThat(response.getBody().isSuccess()).isTrue();
 
 		// Wait for events to be persisted
 		await().atMost(10, TimeUnit.SECONDS)
 				.pollInterval(500, TimeUnit.MILLISECONDS)
-				.untilAsserted(() -> {
-					assertThat(repository.count()).isGreaterThanOrEqualTo(3);
-				});
+				.untilAsserted(() -> assertThat(repository.count()).isGreaterThanOrEqualTo(3));
 	}
 
 	@Test
@@ -105,12 +102,14 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 				.build();
 
 		// When/Then
-		webTestClient.post()
+		ResponseEntity<Void> response = restClient.post()
 				.uri(BASE_URL)
 				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue(request)
-				.exchange()
-				.expectStatus().isBadRequest();
+				.body(request)
+				.retrieve()
+				.toBodilessEntity();
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 	}
 
 	@Test
@@ -119,12 +118,12 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 		// Given
 		ScheduledEventRequest request = createTestRequest();
 
-		webTestClient.post()
+		restClient.post()
 				.uri(BASE_URL)
 				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue(request)
-				.exchange()
-				.expectStatus().isAccepted();
+				.body(request)
+				.retrieve()
+				.toBodilessEntity();
 
 		// Wait for persistence
 		await().atMost(10, TimeUnit.SECONDS)
@@ -134,12 +133,13 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 		var event = repository.findByExternalJobId(request.getExternalJobId()).get();
 
 		// When/Then
-		webTestClient.get()
+		ResponseEntity<ApiResponse> response = restClient.get()
 				.uri(BASE_URL + "/" + event.getId())
-				.exchange()
-				.expectStatus().isOk()
-				.expectBody(ApiResponse.class)
-				.value(response -> assertThat(response.isSuccess()).isTrue());
+				.retrieve()
+				.toEntity(ApiResponse.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody().isSuccess()).isTrue();
 	}
 
 	@Test
@@ -148,12 +148,12 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 		// Given
 		ScheduledEventRequest request = createTestRequest();
 
-		webTestClient.post()
+		restClient.post()
 				.uri(BASE_URL)
 				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue(request)
-				.exchange()
-				.expectStatus().isAccepted();
+				.body(request)
+				.retrieve()
+				.toBodilessEntity();
 
 		// Wait for persistence
 		await().atMost(10, TimeUnit.SECONDS)
@@ -161,12 +161,13 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 				.until(() -> repository.findByExternalJobId(request.getExternalJobId()).isPresent());
 
 		// When/Then
-		webTestClient.get()
+		ResponseEntity<ApiResponse> response = restClient.get()
 				.uri(BASE_URL + "/external/" + request.getExternalJobId())
-				.exchange()
-				.expectStatus().isOk()
-				.expectBody(ApiResponse.class)
-				.value(response -> assertThat(response.isSuccess()).isTrue());
+				.retrieve()
+				.toEntity(ApiResponse.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody().isSuccess()).isTrue();
 	}
 
 	@Test
@@ -175,12 +176,12 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 		// Given
 		ScheduledEventRequest request = createTestRequest();
 
-		webTestClient.post()
+		restClient.post()
 				.uri(BASE_URL)
 				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue(request)
-				.exchange()
-				.expectStatus().isAccepted();
+				.body(request)
+				.retrieve()
+				.toBodilessEntity();
 
 		// Wait for persistence
 		await().atMost(10, TimeUnit.SECONDS)
@@ -188,10 +189,12 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 				.until(() -> repository.findByExternalJobId(request.getExternalJobId()).isPresent());
 
 		// When
-		webTestClient.delete()
+		ResponseEntity<Void> response = restClient.delete()
 				.uri(BASE_URL + "/external/" + request.getExternalJobId())
-				.exchange()
-				.expectStatus().isOk();
+				.retrieve()
+				.toBodilessEntity();
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 
 		// Then
 		await().atMost(5, TimeUnit.SECONDS)
@@ -205,10 +208,12 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 	@Test
 	@DisplayName("Should return 404 for non-existent event")
 	void getNonExistentEvent() {
-		webTestClient.get()
+		ResponseEntity<Void> response = restClient.get()
 				.uri(BASE_URL + "/" + UUID.randomUUID())
-				.exchange()
-				.expectStatus().isNotFound();
+				.retrieve()
+				.toBodilessEntity();
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
 	}
 
 	@Test
@@ -216,12 +221,12 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 	void getStatistics() {
 		// Given - submit some events first
 		for (int i = 0; i < 5; i++) {
-			webTestClient.post()
+			restClient.post()
 					.uri(BASE_URL)
 					.contentType(MediaType.APPLICATION_JSON)
-					.bodyValue(createTestRequest())
-					.exchange()
-					.expectStatus().isAccepted();
+					.body(createTestRequest())
+					.retrieve()
+					.toBodilessEntity();
 		}
 
 		// Wait for persistence
@@ -230,12 +235,13 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 				.until(() -> repository.count() >= 5);
 
 		// When/Then
-		webTestClient.get()
+		ResponseEntity<ApiResponse> response = restClient.get()
 				.uri(BASE_URL + "/statistics")
-				.exchange()
-				.expectStatus().isOk()
-				.expectBody(ApiResponse.class)
-				.value(response -> assertThat(response.isSuccess()).isTrue());
+				.retrieve()
+				.toEntity(ApiResponse.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody().isSuccess()).isTrue();
 	}
 
 	@Test
@@ -248,41 +254,48 @@ class ScheduledEventApiIntegrationTest extends BaseIntegrationTest {
 				.build();
 
 		// When/Then
-		webTestClient.post()
+		ResponseEntity<Void> response = restClient.post()
 				.uri(BASE_URL)
 				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue(request)
-				.exchange()
-				.expectStatus().isBadRequest();
+				.body(request)
+				.retrieve()
+				.toBodilessEntity();
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 	}
 
 	@Test
 	@DisplayName("Should handle health check")
 	void healthCheck() {
-		webTestClient.get()
+		ResponseEntity<Void> response = restClient.get()
 				.uri(BASE_URL + "/health")
-				.exchange()
-				.expectStatus().isOk();
+				.retrieve()
+				.toBodilessEntity();
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 	}
 
 	@Test
 	@DisplayName("Admin cleanup should return 401 without credentials")
 	void adminCleanup_withoutAuth_returns401() {
-		webTestClient.post()
+		ResponseEntity<Void> response = restClient.post()
 				.uri(BASE_URL + "/admin/cleanup")
-				.exchange()
-				.expectStatus().isUnauthorized();
+				.retrieve()
+				.toBodilessEntity();
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
 	}
 
 	@Test
 	@DisplayName("Admin cleanup should return 200 with valid credentials")
 	void adminCleanup_withAuth_returns200() {
-		adminWebTestClient().post()
+		ResponseEntity<ApiResponse> response = adminRestClient().post()
 				.uri(BASE_URL + "/admin/cleanup")
-				.exchange()
-				.expectStatus().isOk()
-				.expectBody(ApiResponse.class)
-				.value(response -> assertThat(response.isSuccess()).isTrue());
+				.retrieve()
+				.toEntity(ApiResponse.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody().isSuccess()).isTrue();
 	}
 
 	private ScheduledEventRequest createTestRequest() {

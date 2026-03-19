@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -31,7 +32,7 @@ import java.util.UUID;
 public class ScheduledEventController {
 
 	private final ScheduledEventService scheduledEventService;
-	private final EventCleanupService eventCleanupService;
+	private final Optional<EventCleanupService> eventCleanupService;
 
 	/**
 	 * Submit a single scheduled event.
@@ -142,9 +143,15 @@ public class ScheduledEventController {
 	 * Trigger manual cleanup (admin operation).
 	 */
 	@PostMapping("/admin/cleanup")
-	public ResponseEntity<ApiResponse<EventCleanupService.CleanupResult>> triggerCleanup(
+	public ResponseEntity<ApiResponse<?>> triggerCleanup(
 			@RequestParam(defaultValue = "7") int days) {
-		EventCleanupService.CleanupResult result = eventCleanupService.manualCleanup(days);
+
+		if (eventCleanupService.isEmpty()) {
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+					.body(ApiResponse.error("Event cleanup is disabled on this instance", "DISABLED"));
+		}
+
+		EventCleanupService.CleanupResult result = eventCleanupService.get().manualCleanup(days);
 		return ResponseEntity.ok(ApiResponse.success(result, "Cleanup completed"));
 	}
 
@@ -159,5 +166,6 @@ public class ScheduledEventController {
 	/**
 	 * Response DTO for single event submission.
 	 */
-	public record SubmitEventResponse(String messageId, String message) {}
+	public record SubmitEventResponse(String messageId, String message) {
+	}
 }

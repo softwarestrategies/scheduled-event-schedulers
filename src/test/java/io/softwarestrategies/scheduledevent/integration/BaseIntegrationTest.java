@@ -1,12 +1,13 @@
 package io.softwarestrategies.scheduledevent.integration;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.client.RestClient;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -15,7 +16,7 @@ import org.testcontainers.utility.DockerImageName;
 
 /**
  * Base test class with Testcontainers setup for PostgreSQL and Kafka.
- * Uses WebTestClient for modern Spring Boot 4 testing.
+ * Uses RestClient for synchronous HTTP testing with virtual threads.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
@@ -28,13 +29,22 @@ public abstract class BaseIntegrationTest {
 	@LocalServerPort
 	private int port;
 
-	@Autowired
-	protected WebTestClient webTestClient;
+	protected RestClient restClient;
 
-	protected WebTestClient adminWebTestClient() {
-		return WebTestClient.bindToServer()
+	@BeforeEach
+	void setUpRestClient() {
+		restClient = buildRestClient(RestClient.builder());
+	}
+
+	protected RestClient adminRestClient() {
+		return buildRestClient(RestClient.builder()
+				.defaultHeaders(h -> h.setBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD)));
+	}
+
+	private RestClient buildRestClient(RestClient.Builder builder) {
+		return builder
 				.baseUrl("http://localhost:" + port)
-				.defaultHeaders(h -> h.setBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD))
+				.defaultStatusHandler(HttpStatusCode::isError, (req, res) -> {})
 				.build();
 	}
 
@@ -47,8 +57,7 @@ public abstract class BaseIntegrationTest {
 			.withCommand(
 					"postgres",
 					"-c", "max_connections=100",
-					"-c", "shared_buffers=128MB"
-			);
+					"-c", "shared_buffers=128MB");
 
 	@Container
 	static KafkaContainer kafka = new KafkaContainer(
@@ -70,9 +79,6 @@ public abstract class BaseIntegrationTest {
 		// Scheduler settings for faster tests
 		registry.add("app.scheduler.poll-interval-ms", () -> "100");
 		registry.add("app.scheduler.batch-size", () -> "10");
-
-		// Cleanup settings
-		registry.add("app.cleanup.enabled", () -> "false");
 
 		// Admin credentials
 		registry.add("app.admin.username", () -> ADMIN_USERNAME);
