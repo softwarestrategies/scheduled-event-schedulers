@@ -1,6 +1,5 @@
 package io.softwarestrategies.scheduledevent.service;
 
-import com.github.benmanes.caffeine.cache.Cache;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import io.softwarestrategies.scheduledevent.domain.DeliveryType;
@@ -15,9 +14,7 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.support.Acknowledgment;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -61,7 +58,7 @@ class KafkaConsumerServiceTest {
                 .messageId(id)
                 .externalJobId(extJobId)
                 .source("test-source")
-                .scheduledAt(Instant.now().plus(1, ChronoUnit.HOURS))
+                .scheduledAt(Instant.parse("2026-01-01T10:00:00Z").plus(1, ChronoUnit.HOURS))
                 .deliveryType(DeliveryType.HTTP)
                 .destination("http://localhost/test")
                 .payload("{\"key\":\"value\"}")
@@ -165,9 +162,32 @@ class KafkaConsumerServiceTest {
 
         // Original message should be sent to DLQ
         ArgumentCaptor<KafkaEventMessage> dlqCaptor = ArgumentCaptor.forClass(KafkaEventMessage.class);
-        verify(kafkaProducerService).sendToDlq(dlqCaptor.capture(), anyString());
+        verify(kafkaProducerService).sendToDlq(dlqCaptor.capture(), eq("Persist failed: Database connection lost"));
         assertThat(dlqCaptor.getValue().getExternalJobId()).isEqualTo("job-1");
 
         verify(acknowledgment).acknowledge(); // Batch itself is ack'd to prevent poison pill loops
+    }
+
+    @Test
+    void shouldSkipInsertWhenExistsByUniqueKeyReturnsTrue() {
+        // Given
+        KafkaEventMessage msg1 = createMessage("msg-1", "job-1");
+        List<KafkaEventMessage> batch = Collections.singletonList(msg1);
+
+        // Simulate that the database already has this event
+        when(scheduledEventRepository.existsByUniqueKey(eq("job-1"), eq("test-source"), any(Instant.class))).thenReturn(true);
+
+        // When
+        kafkaConsumerService.consumeIngestionBatch(batch, acknowledgment);
+
+        // Then
+        // Since it exists, insertIgnoreDuplicate should NEVER be called
+        verify(scheduledEventRepository, never()).insertIgnoreDuplicate(any());
+        // Counter should not be incremented
+        verify(eventsPersistedCounter, never()).increment();
+        // Acknowledgment must still happen to clear the batch offset
+        verify(acknowledgment).acknowledge();
+        // Should not go to DLQ
+        verifyNoInteractions(kafkaProducerService);
     }
 }
