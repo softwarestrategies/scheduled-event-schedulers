@@ -149,14 +149,6 @@ public class EventDeliveryService {
 		return ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
 	}
 
-	private void sleep(long millis) {
-		try {
-			Thread.sleep(millis);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-		}
-	}
-
 	/**
 	 * Extracts the host domain from a URL to use as the CircuitBreaker name.
 	 */

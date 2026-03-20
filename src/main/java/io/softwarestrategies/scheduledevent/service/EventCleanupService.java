@@ -105,16 +105,6 @@ public class EventCleanupService {
 		return new CleanupResult(totalDeleted, cutoff);
 	}
 
-	/**
-	 * Get cleanup statistics.
-	 */
-	public CleanupStats getCleanupStats() {
-		Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
-		// This would require a count query - simplified here
-		return new CleanupStats(retentionDays, batchSize, cutoff);
+	public record CleanupResult(long deletedCount, Instant cutoffTime) {
 	}
-
-	public record CleanupResult(long deletedCount, Instant cutoffTime) {}
-
-	public record CleanupStats(int retentionDays, int batchSize, Instant nextCutoff) {}
 }
