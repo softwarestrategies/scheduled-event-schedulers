@@ -15,7 +15,7 @@ public class MetricsUpdater {
 	private final ScheduledEventRepository repository;
 	private final MetricsConfig metricsConfig;
 
-	@Scheduled(fixedRate = 5000)  // Every 5 seconds
+	@Scheduled(fixedRate = 60000) // Every 60 seconds
 	public void updateGauges() {
 		metricsConfig.updatePendingEventsGauge(
 				repository.countByStatus(EventStatus.PENDING));
