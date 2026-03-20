@@ -19,49 +19,45 @@ import java.util.Map;
 @Configuration
 public class DatabaseRoutingConfig {
 
-    // Since we omit replica props lookup, returning a primary fallback if one doesn't exist
-    // is tricky without inspecting properties manually. But ConfigurationProperties 
-    // will just build an empty data source if properties are missing. 
-    // Usually, applications configure both when this feature is enabled.
-    
     @Bean(name = "primaryDataSource")
     @ConfigurationProperties(prefix = "spring.datasource.hikari")
     public DataSource primaryDataSource(org.springframework.core.env.Environment env) {
-        HikariDataSource ds = DataSourceBuilder.create().type(HikariDataSource.class).build();
-        ds.setJdbcUrl(env.getProperty("spring.datasource.url"));
-        ds.setUsername(env.getProperty("spring.datasource.username"));
-        ds.setPassword(env.getProperty("spring.datasource.password"));
-        String driver = env.getProperty("spring.datasource.driver-class-name");
-        if (driver != null) {
-            ds.setDriverClassName(driver);
-        }
-        return ds;
+        return buildDataSource(
+                env.getProperty("spring.datasource.url"),
+                env.getProperty("spring.datasource.username"),
+                env.getProperty("spring.datasource.password"),
+                env.getProperty("spring.datasource.driver-class-name")
+        );
     }
 
     @Bean(name = "replicaDataSource")
     @ConfigurationProperties(prefix = "spring.datasource.replica.hikari")
     public DataSource replicaDataSource(org.springframework.core.env.Environment env) {
-        HikariDataSource ds = DataSourceBuilder.create().type(HikariDataSource.class).build();
-        
         String replicaUrl = env.getProperty("spring.datasource.replica.url");
         if (replicaUrl != null) {
-            ds.setJdbcUrl(replicaUrl);
-            ds.setUsername(env.getProperty("spring.datasource.replica.username"));
-            ds.setPassword(env.getProperty("spring.datasource.replica.password"));
-            String driver = env.getProperty("spring.datasource.replica.driver-class-name");
-            if (driver != null) {
-                ds.setDriverClassName(driver);
-            }
+            return buildDataSource(
+                    replicaUrl,
+                    env.getProperty("spring.datasource.replica.username"),
+                    env.getProperty("spring.datasource.replica.password"),
+                    env.getProperty("spring.datasource.replica.driver-class-name")
+            );
         } else {
             // Fallback to primary if replica is not configured
-            ds.setJdbcUrl(env.getProperty("spring.datasource.url"));
-            ds.setUsername(env.getProperty("spring.datasource.username"));
-            ds.setPassword(env.getProperty("spring.datasource.password"));
-            String driver = env.getProperty("spring.datasource.driver-class-name");
-            if (driver != null) {
-                ds.setDriverClassName(driver);
-            }
+            return buildDataSource(
+                    env.getProperty("spring.datasource.url"),
+                    env.getProperty("spring.datasource.username"),
+                    env.getProperty("spring.datasource.password"),
+                    env.getProperty("spring.datasource.driver-class-name")
+            );
         }
+    }
+
+    private DataSource buildDataSource(String url, String username, String password, String driver) {
+        HikariDataSource ds = DataSourceBuilder.create().type(HikariDataSource.class).build();
+        if (url != null) ds.setJdbcUrl(url);
+        if (username != null) ds.setUsername(username);
+        if (password != null) ds.setPassword(password);
+        if (driver != null) ds.setDriverClassName(driver);
         return ds;
     }
 
