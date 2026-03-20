@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -61,6 +62,7 @@ public class KafkaConsumerService {
 		Timer.Sample sample = Timer.start();
 		List<ScheduledEvent> eventsToSave = new ArrayList<>();
 		List<KafkaEventMessage> failedMessages = new ArrayList<>();
+		List<CompletableFuture<Void>> dlqFutures = new ArrayList<>();
 
 		for (KafkaEventMessage message : messages) {
 			try {
@@ -104,13 +106,25 @@ public class KafkaConsumerService {
 				messages.stream()
 						.filter(m -> m.getExternalJobId().equals(event.getExternalJobId()))
 						.findFirst()
-						.ifPresent(m -> kafkaProducerService.sendToDlq(m, "Persist failed: " + e.getMessage()));
+						.ifPresent(m -> dlqFutures
+								.add(kafkaProducerService.sendToDlq(m, "Persist failed: " + e.getMessage())));
 			}
 		}
 
 		// Handle failed messages
 		for (KafkaEventMessage failed : failedMessages) {
-			kafkaProducerService.sendToDlq(failed, "Message processing failed");
+			dlqFutures.add(kafkaProducerService.sendToDlq(failed, "Message processing failed"));
+		}
+
+		// Wait for all DLQ sends to succeed
+		try {
+			if (!dlqFutures.isEmpty()) {
+				CompletableFuture.allOf(dlqFutures.toArray(new CompletableFuture[0])).join();
+			}
+		} catch (Exception e) {
+			log.error("Failed to send one or more messages to DLQ. Aborting batch acknowledgment to prevent data loss.",
+					e);
+			throw new RuntimeException("DLQ send failed, aborting batch", e);
 		}
 
 		sample.stop(databaseBatchTimer);
