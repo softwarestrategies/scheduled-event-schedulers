@@ -61,10 +61,20 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	Optional<ScheduledEvent> findByExternalJobId(String externalJobId);
 
 	/**
+	 * Find events by external job ID and partition key (optimized)
+	 */
+	Optional<ScheduledEvent> findByExternalJobIdAndPartitionKey(String externalJobId, int partitionKey);
+
+	/**
 	 * Find all events by external job ID (may have duplicates with different
 	 * scheduled times)
 	 */
 	List<ScheduledEvent> findAllByExternalJobId(String externalJobId);
+
+	/**
+	 * Find all events by external job ID and partition key (optimized)
+	 */
+	List<ScheduledEvent> findAllByExternalJobIdAndPartitionKey(String externalJobId, int partitionKey);
 
 	/**
 	 * Find events by source and status
@@ -176,6 +186,22 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 			""")
 	int cancelByExternalJobId(
 			@Param("externalJobId") String externalJobId,
+			@Param("now") Instant now,
+			@Param("cancelledStatus") EventStatus cancelledStatus,
+			@Param("pendingStatus") EventStatus pendingStatus);
+
+	/**
+	 * Cancel an event by external job ID and partition key (optimized)
+	 */
+	@Modifying
+	@Query("""
+			UPDATE ScheduledEvent e
+			SET e.status = :cancelledStatus, e.updatedAt = :now
+			WHERE e.externalJobId = :externalJobId AND e.partitionKey = :partitionKey AND e.status = :pendingStatus
+			""")
+	int cancelByExternalJobIdAndPartitionKey(
+			@Param("externalJobId") String externalJobId,
+			@Param("partitionKey") int partitionKey,
 			@Param("now") Instant now,
 			@Param("cancelledStatus") EventStatus cancelledStatus,
 			@Param("pendingStatus") EventStatus pendingStatus);

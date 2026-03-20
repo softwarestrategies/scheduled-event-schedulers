@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -87,8 +88,9 @@ public class ScheduledEventController {
 	@GetMapping("/external/{externalJobId}")
 	@Timed(value = "scheduledevent.api.get.external", description = "Time to get an event by external job ID")
 	public ResponseEntity<ApiResponse<ScheduledEventResponse>> getEventByExternalJobId(
-			@PathVariable String externalJobId) {
-		ScheduledEventResponse event = scheduledEventService.getEventByExternalJobId(externalJobId);
+			@PathVariable String externalJobId,
+			@RequestParam(required = false) Instant scheduledAt) {
+		ScheduledEventResponse event = scheduledEventService.getEventByExternalJobId(externalJobId, scheduledAt);
 		return ResponseEntity.ok(ApiResponse.success(event));
 	}
 
@@ -97,8 +99,9 @@ public class ScheduledEventController {
 	 */
 	@GetMapping("/external/{externalJobId}/all")
 	public ResponseEntity<ApiResponse<List<ScheduledEventResponse>>> getAllEventsByExternalJobId(
-			@PathVariable String externalJobId) {
-		List<ScheduledEventResponse> events = scheduledEventService.getEventsByExternalJobId(externalJobId);
+			@PathVariable String externalJobId,
+			@RequestParam(required = false) Instant scheduledAt) {
+		List<ScheduledEventResponse> events = scheduledEventService.getEventsByExternalJobId(externalJobId, scheduledAt);
 		return ResponseEntity.ok(ApiResponse.success(events));
 	}
 
@@ -121,8 +124,10 @@ public class ScheduledEventController {
 	 * Cancel event(s) by external job ID.
 	 */
 	@DeleteMapping("/external/{externalJobId}")
-	public ResponseEntity<ApiResponse<Void>> cancelEventByExternalJobId(@PathVariable String externalJobId) {
-		boolean cancelled = scheduledEventService.cancelEvent(externalJobId);
+	public ResponseEntity<ApiResponse<Void>> cancelEventByExternalJobId(
+			@PathVariable String externalJobId,
+			@RequestParam(required = false) Instant scheduledAt) {
+		boolean cancelled = scheduledEventService.cancelEvent(externalJobId, scheduledAt);
 		if (cancelled) {
 			return ResponseEntity.ok(ApiResponse.success(null, "Event(s) cancelled"));
 		}

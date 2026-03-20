@@ -24,6 +24,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -152,6 +153,8 @@ class KafkaConsumerServiceTest {
         when(scheduledEventRepository.existsByUniqueKey(anyString(), anyString(), any())).thenReturn(false);
         when(scheduledEventRepository.insertIgnoreDuplicate(any()))
                 .thenThrow(new RuntimeException("Database connection lost"));
+        when(kafkaProducerService.sendToDlq(any(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         // When
         kafkaConsumerService.consumeIngestionBatch(batch, acknowledgment);
