@@ -1,6 +1,7 @@
 package io.softwarestrategies.scheduledevent.config;
 
 import com.zaxxer.hikari.HikariDataSource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.jdbc.DataSourceBuilder;
@@ -17,6 +18,7 @@ import java.util.Map;
  * Configures the data sources and routing logic.
  */
 @Configuration
+@Slf4j
 public class DatabaseRoutingConfig {
 
     @Bean(name = "primaryDataSource")
@@ -42,7 +44,8 @@ public class DatabaseRoutingConfig {
                     env.getProperty("spring.datasource.replica.driver-class-name")
             );
         } else {
-            // Fallback to primary if replica is not configured
+            log.warn("No replica datasource configured (spring.datasource.replica.url is not set). " +
+                     "@ReadOnlyRoute methods will fall back to the primary datasource.");
             return buildDataSource(
                     env.getProperty("spring.datasource.url"),
                     env.getProperty("spring.datasource.username"),
