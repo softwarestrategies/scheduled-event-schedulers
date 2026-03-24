@@ -12,7 +12,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -31,7 +33,7 @@ import java.util.UUID;
 public class ScheduledEventController {
 
 	private final ScheduledEventService scheduledEventService;
-	private final EventCleanupService eventCleanupService;
+	private final Optional<EventCleanupService> eventCleanupService;
 
 	/**
 	 * Submit a single scheduled event.
@@ -86,8 +88,9 @@ public class ScheduledEventController {
 	@GetMapping("/external/{externalJobId}")
 	@Timed(value = "scheduledevent.api.get.external", description = "Time to get an event by external job ID")
 	public ResponseEntity<ApiResponse<ScheduledEventResponse>> getEventByExternalJobId(
-			@PathVariable String externalJobId) {
-		ScheduledEventResponse event = scheduledEventService.getEventByExternalJobId(externalJobId);
+			@PathVariable String externalJobId,
+			@RequestParam(required = false) Instant scheduledAt) {
+		ScheduledEventResponse event = scheduledEventService.getEventByExternalJobId(externalJobId, scheduledAt);
 		return ResponseEntity.ok(ApiResponse.success(event));
 	}
 
@@ -96,8 +99,9 @@ public class ScheduledEventController {
 	 */
 	@GetMapping("/external/{externalJobId}/all")
 	public ResponseEntity<ApiResponse<List<ScheduledEventResponse>>> getAllEventsByExternalJobId(
-			@PathVariable String externalJobId) {
-		List<ScheduledEventResponse> events = scheduledEventService.getEventsByExternalJobId(externalJobId);
+			@PathVariable String externalJobId,
+			@RequestParam(required = false) Instant scheduledAt) {
+		List<ScheduledEventResponse> events = scheduledEventService.getEventsByExternalJobId(externalJobId, scheduledAt);
 		return ResponseEntity.ok(ApiResponse.success(events));
 	}
 
@@ -120,8 +124,10 @@ public class ScheduledEventController {
 	 * Cancel event(s) by external job ID.
 	 */
 	@DeleteMapping("/external/{externalJobId}")
-	public ResponseEntity<ApiResponse<Void>> cancelEventByExternalJobId(@PathVariable String externalJobId) {
-		boolean cancelled = scheduledEventService.cancelEvent(externalJobId);
+	public ResponseEntity<ApiResponse<Void>> cancelEventByExternalJobId(
+			@PathVariable String externalJobId,
+			@RequestParam(required = false) Instant scheduledAt) {
+		boolean cancelled = scheduledEventService.cancelEvent(externalJobId, scheduledAt);
 		if (cancelled) {
 			return ResponseEntity.ok(ApiResponse.success(null, "Event(s) cancelled"));
 		}
@@ -142,9 +148,15 @@ public class ScheduledEventController {
 	 * Trigger manual cleanup (admin operation).
 	 */
 	@PostMapping("/admin/cleanup")
-	public ResponseEntity<ApiResponse<EventCleanupService.CleanupResult>> triggerCleanup(
+	public ResponseEntity<ApiResponse<?>> triggerCleanup(
 			@RequestParam(defaultValue = "7") int days) {
-		EventCleanupService.CleanupResult result = eventCleanupService.manualCleanup(days);
+
+		if (eventCleanupService.isEmpty()) {
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+					.body(ApiResponse.error("Event cleanup is disabled on this instance", "DISABLED"));
+		}
+
+		EventCleanupService.CleanupResult result = eventCleanupService.get().manualCleanup(days);
 		return ResponseEntity.ok(ApiResponse.success(result, "Cleanup completed"));
 	}
 
@@ -159,5 +171,6 @@ public class ScheduledEventController {
 	/**
 	 * Response DTO for single event submission.
 	 */
-	public record SubmitEventResponse(String messageId, String message) {}
+	public record SubmitEventResponse(String messageId, String message) {
+	}
 }

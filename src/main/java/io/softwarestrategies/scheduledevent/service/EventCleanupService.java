@@ -7,7 +7,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -23,6 +24,7 @@ import java.time.temporal.ChronoUnit;
 public class EventCleanupService {
 
 	private final ScheduledEventRepository scheduledEventRepository;
+	private final PlatformTransactionManager transactionManager;
 
 	@Value("${app.cleanup.retention-days:7}")
 	private int retentionDays;
@@ -74,11 +76,14 @@ public class EventCleanupService {
 	}
 
 	/**
-	 * Delete a batch of old events.
+	 * Delete a batch of old events in its own transaction.
+	 * Uses TransactionTemplate directly to ensure each batch commits independently,
+	 * even when called via self-invocation (which bypasses Spring's AOP proxy).
 	 */
-	@Transactional
 	public int deleteEventsBatch(Instant cutoff) {
-		return scheduledEventRepository.deleteCompletedEventsBefore(cutoff, batchSize);
+		Integer deleted = new TransactionTemplate(transactionManager)
+				.execute(status -> scheduledEventRepository.deleteCompletedEventsBefore(cutoff, batchSize));
+		return deleted != null ? deleted : 0;
 	}
 
 	/**
@@ -100,16 +105,6 @@ public class EventCleanupService {
 		return new CleanupResult(totalDeleted, cutoff);
 	}
 
-	/**
-	 * Get cleanup statistics.
-	 */
-	public CleanupStats getCleanupStats() {
-		Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
-		// This would require a count query - simplified here
-		return new CleanupStats(retentionDays, batchSize, cutoff);
+	public record CleanupResult(long deletedCount, Instant cutoffTime) {
 	}
-
-	public record CleanupResult(long deletedCount, Instant cutoffTime) {}
-
-	public record CleanupStats(int retentionDays, int batchSize, Instant nextCutoff) {}
 }

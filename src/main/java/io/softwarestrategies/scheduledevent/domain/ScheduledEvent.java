@@ -213,6 +213,11 @@ public class ScheduledEvent {
 			this.status = EventStatus.PENDING;
 			this.lockedBy = null;
 			this.lockExpiresAt = null;
+			
+			// Apply exponential backoff: 30s * 2^(retryCount - 1)
+			int backoffSeconds = 30 * (1 << (this.retryCount - 1));
+			this.scheduledAt = Instant.now().plusSeconds(backoffSeconds);
+			this.partitionKey = calculatePartitionKey(this.scheduledAt);
 		} else {
 			this.status = EventStatus.DEAD_LETTER;
 			this.executedAt = Instant.now();

@@ -5,8 +5,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import io.softwarestrategies.scheduledevent.domain.EventStatus;
-import io.softwarestrategies.scheduledevent.repository.ScheduledEventRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -94,27 +92,15 @@ public class MetricsConfig {
 	}
 
 	@Bean
-	public Gauge pendingEventsMetric(MeterRegistry registry, ScheduledEventRepository repository) {
-		return Gauge.builder("scheduledevent.events.pending", () -> {
-					try {
-						return repository.countByStatus(EventStatus.PENDING);
-					} catch (Exception e) {
-						return pendingEventsGauge.get();
-					}
-				})
+	public Gauge pendingEventsMetric(MeterRegistry registry) {
+		return Gauge.builder("scheduledevent.events.pending", pendingEventsGauge::get)
 				.description("Number of pending events")
 				.register(registry);
 	}
 
 	@Bean
-	public Gauge processingEventsMetric(MeterRegistry registry, ScheduledEventRepository repository) {
-		return Gauge.builder("scheduledevent.events.processing", () -> {
-					try {
-						return repository.countByStatus(EventStatus.PROCESSING);
-					} catch (Exception e) {
-						return processingEventsGauge.get();
-					}
-				})
+	public Gauge processingEventsMetric(MeterRegistry registry) {
+		return Gauge.builder("scheduledevent.events.processing", processingEventsGauge::get)
 				.description("Number of events currently being processed")
 				.register(registry);
 	}

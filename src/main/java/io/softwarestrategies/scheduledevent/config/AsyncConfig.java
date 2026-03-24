@@ -22,11 +22,4 @@ public class AsyncConfig {
 		return Executors.newVirtualThreadPerTaskExecutor();
 	}
 
-	/**
-	 * Task executor for scheduled tasks.
-	 */
-	@Bean(name = "schedulerExecutor")
-	public ExecutorService schedulerExecutor() {
-		return Executors.newVirtualThreadPerTaskExecutor();
-	}
 }

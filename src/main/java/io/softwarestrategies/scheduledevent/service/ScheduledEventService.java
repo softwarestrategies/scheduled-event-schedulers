@@ -2,6 +2,7 @@ package io.softwarestrategies.scheduledevent.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.softwarestrategies.scheduledevent.annotation.ReadOnlyRoute;
 import io.softwarestrategies.scheduledevent.domain.EventStatus;
 import io.softwarestrategies.scheduledevent.domain.ScheduledEvent;
 import io.softwarestrategies.scheduledevent.dto.*;
@@ -94,6 +95,7 @@ public class ScheduledEventService {
 	 * Get an event by ID.
 	 */
 	@Transactional(readOnly = true)
+	@ReadOnlyRoute
 	public ScheduledEventResponse getEventById(UUID id) {
 		ScheduledEvent event = scheduledEventRepository.findById(id)
 				.orElseThrow(() -> new EventNotFoundException(id.toString()));
@@ -104,9 +106,17 @@ public class ScheduledEventService {
 	 * Get an event by external job ID.
 	 */
 	@Transactional(readOnly = true)
-	public ScheduledEventResponse getEventByExternalJobId(String externalJobId) {
-		ScheduledEvent event = scheduledEventRepository.findByExternalJobId(externalJobId)
-				.orElseThrow(() -> new EventNotFoundException(externalJobId));
+	@ReadOnlyRoute
+	public ScheduledEventResponse getEventByExternalJobId(String externalJobId, Instant scheduledAt) {
+		ScheduledEvent event;
+		if (scheduledAt != null) {
+			int partitionKey = ScheduledEvent.calculatePartitionKey(scheduledAt);
+			event = scheduledEventRepository.findByExternalJobIdAndPartitionKey(externalJobId, partitionKey)
+					.orElseThrow(() -> new EventNotFoundException(externalJobId));
+		} else {
+			event = scheduledEventRepository.findByExternalJobId(externalJobId)
+					.orElseThrow(() -> new EventNotFoundException(externalJobId));
+		}
 		return ScheduledEventResponse.fromEntity(event);
 	}
 
@@ -114,7 +124,14 @@ public class ScheduledEventService {
 	 * Get all events for a given external job ID.
 	 */
 	@Transactional(readOnly = true)
-	public List<ScheduledEventResponse> getEventsByExternalJobId(String externalJobId) {
+	@ReadOnlyRoute
+	public List<ScheduledEventResponse> getEventsByExternalJobId(String externalJobId, Instant scheduledAt) {
+		if (scheduledAt != null) {
+			int partitionKey = ScheduledEvent.calculatePartitionKey(scheduledAt);
+			return scheduledEventRepository.findAllByExternalJobIdAndPartitionKey(externalJobId, partitionKey).stream()
+					.map(ScheduledEventResponse::fromEntity)
+					.toList();
+		}
 		return scheduledEventRepository.findAllByExternalJobId(externalJobId).stream()
 				.map(ScheduledEventResponse::fromEntity)
 				.toList();
@@ -125,12 +142,24 @@ public class ScheduledEventService {
 	 * Only pending events can be cancelled.
 	 */
 	@Transactional
-	public boolean cancelEvent(String externalJobId) {
-		int cancelled = scheduledEventRepository.cancelByExternalJobId(
-				externalJobId,
-				Instant.now(),
-				EventStatus.CANCELLED,
-				EventStatus.PENDING);
+	public boolean cancelEvent(String externalJobId, Instant scheduledAt) {
+		int cancelled;
+		if (scheduledAt != null) {
+			int partitionKey = ScheduledEvent.calculatePartitionKey(scheduledAt);
+			cancelled = scheduledEventRepository.cancelByExternalJobIdAndPartitionKey(
+					externalJobId,
+					partitionKey,
+					Instant.now(),
+					EventStatus.CANCELLED,
+					EventStatus.PENDING);
+		} else {
+			cancelled = scheduledEventRepository.cancelByExternalJobId(
+					externalJobId,
+					Instant.now(),
+					EventStatus.CANCELLED,
+					EventStatus.PENDING);
+		}
+		
 		if (cancelled > 0) {
 			log.info("Cancelled {} event(s) for external job ID: {}", cancelled, externalJobId);
 			return true;
@@ -167,6 +196,7 @@ public class ScheduledEventService {
 	 * Get event statistics by status.
 	 */
 	@Transactional(readOnly = true)
+	@ReadOnlyRoute
 	public EventStatistics getStatistics() {
 		List<Object[]> stats = scheduledEventRepository.getStatusStatistics();
 

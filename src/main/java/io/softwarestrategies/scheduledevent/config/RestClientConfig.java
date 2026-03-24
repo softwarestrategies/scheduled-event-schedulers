@@ -19,7 +19,7 @@ public class RestClientConfig {
 	@Value("${app.http-client.connect-timeout-ms:5000}")
 	private int connectTimeoutMs;
 
-	@Value("${app.http-client.read-timeout-ms:30000}")
+	@Value("${app.http-client.read-timeout-ms:5000}")
 	private int readTimeoutMs;
 
 	@Bean

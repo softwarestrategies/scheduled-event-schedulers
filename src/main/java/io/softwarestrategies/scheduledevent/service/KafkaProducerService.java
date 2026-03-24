@@ -56,8 +56,8 @@ public class KafkaProducerService {
 				// Use source as partition key for ordering guarantees per client
 				String partitionKey = request.getSource() + ":" + request.getExternalJobId();
 
-				CompletableFuture<SendResult<String, Object>> future =
-						kafkaTemplate.send(ingestionTopic, partitionKey, message);
+				CompletableFuture<SendResult<String, Object>> future = kafkaTemplate.send(ingestionTopic, partitionKey,
+						message);
 
 				eventsReceivedCounter.increment();
 
@@ -98,19 +98,19 @@ public class KafkaProducerService {
 						.toList());
 	}
 
-	/**
-	 * Send a message to the dead letter queue.
-	 *
-	 * @param message The failed message
-	 * @param error   The error that caused the failure
-	 */
-	public void sendToDlq(KafkaEventMessage message, String error) {
+	public CompletableFuture<Void> sendToDlq(KafkaEventMessage message, String error) {
 		try {
 			String dlqPayload = objectMapper.writeValueAsString(new DlqMessage(message, error));
-			kafkaTemplate.send(dlqTopic, message.getSource(), dlqPayload);
-			log.warn("Message sent to DLQ. MessageId: {}, Error: {}", message.getMessageId(), error);
+			return kafkaTemplate.send(dlqTopic, message.getSource(), dlqPayload)
+					.thenAccept(result -> log.warn("Message sent to DLQ. MessageId: {}, Error: {}",
+							message.getMessageId(), error))
+					.exceptionally(ex -> {
+						log.error("Failed to send message to DLQ. MessageId: {}", message.getMessageId(), ex);
+						throw new RuntimeException("DLQ send failed", ex);
+					});
 		} catch (Exception e) {
-			log.error("Failed to send message to DLQ. MessageId: {}", message.getMessageId(), e);
+			log.error("Failed to serialize or send message to DLQ. MessageId: {}", message.getMessageId(), e);
+			return CompletableFuture.failedFuture(e);
 		}
 	}
 
@@ -135,5 +135,6 @@ public class KafkaProducerService {
 	/**
 	 * DLQ message wrapper.
 	 */
-	private record DlqMessage(KafkaEventMessage originalMessage, String error) {}
+	private record DlqMessage(KafkaEventMessage originalMessage, String error) {
+	}
 }

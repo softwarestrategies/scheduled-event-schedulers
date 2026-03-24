@@ -14,7 +14,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Repository for scheduled events with optimized queries for high-throughput processing.
+ * Repository for scheduled events with optimized queries for high-throughput
+ * processing.
  *
  * Uses PostgreSQL-specific features:
  * - SELECT FOR UPDATE SKIP LOCKED for concurrent processing
@@ -25,22 +26,23 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 
 	/**
 	 * Find events ready for execution using SELECT FOR UPDATE SKIP LOCKED.
-	 * This allows multiple workers to process events concurrently without conflicts.
+	 * This allows multiple workers to process events concurrently without
+	 * conflicts.
 	 *
-	 * @param status        Event status to consider (typically PENDING)
+	 * @param status          Event status to consider (typically PENDING)
 	 * @param scheduledBefore Events scheduled before this time are ready
-	 * @param limit         Maximum number of events to fetch
+	 * @param limit           Maximum number of events to fetch
 	 * @return List of events ready for processing
 	 */
 	@Query(value = """
-            SELECT * FROM scheduled_events
-            WHERE status = :status
-            AND scheduled_at <= :scheduledBefore
-            AND (lock_expires_at IS NULL OR lock_expires_at < :now)
-            ORDER BY scheduled_at ASC
-            LIMIT :limit
-            FOR UPDATE SKIP LOCKED
-            """, nativeQuery = true)
+			SELECT * FROM scheduled_events
+			WHERE status = :status
+			AND scheduled_at <= :scheduledBefore
+			AND (lock_expires_at IS NULL OR lock_expires_at < :now)
+			ORDER BY scheduled_at ASC
+			LIMIT :limit
+			FOR UPDATE SKIP LOCKED
+			""", nativeQuery = true)
 	List<ScheduledEvent> findAndLockEventsForProcessing(
 			@Param("status") String status,
 			@Param("scheduledBefore") Instant scheduledBefore,
@@ -59,9 +61,20 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	Optional<ScheduledEvent> findByExternalJobId(String externalJobId);
 
 	/**
-	 * Find all events by external job ID (may have duplicates with different scheduled times)
+	 * Find events by external job ID and partition key (optimized)
+	 */
+	Optional<ScheduledEvent> findByExternalJobIdAndPartitionKey(String externalJobId, int partitionKey);
+
+	/**
+	 * Find all events by external job ID (may have duplicates with different
+	 * scheduled times)
 	 */
 	List<ScheduledEvent> findAllByExternalJobId(String externalJobId);
+
+	/**
+	 * Find all events by external job ID and partition key (optimized)
+	 */
+	List<ScheduledEvent> findAllByExternalJobIdAndPartitionKey(String externalJobId, int partitionKey);
 
 	/**
 	 * Find events by source and status
@@ -90,14 +103,14 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	 */
 	@Modifying
 	@Query(value = """
-            UPDATE scheduled_events 
-            SET status = 'PENDING', 
-                locked_by = NULL, 
-                lock_expires_at = NULL,
-                updated_at = :now
-            WHERE status = 'PROCESSING' 
-            AND lock_expires_at < :now
-            """, nativeQuery = true)
+			UPDATE scheduled_events
+			SET status = 'PENDING',
+			    locked_by = NULL,
+			    lock_expires_at = NULL,
+			    updated_at = :now
+			WHERE status = 'PROCESSING'
+			AND lock_expires_at < :now
+			""", nativeQuery = true)
 	int releaseExpiredLocks(@Param("now") Instant now);
 
 	/**
@@ -105,11 +118,14 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	 */
 	@Modifying
 	@Query(value = """
-            DELETE FROM scheduled_events 
-            WHERE status IN ('COMPLETED', 'DEAD_LETTER', 'CANCELLED')
-            AND executed_at < :cutoff
-            LIMIT :batchSize
-            """, nativeQuery = true)
+			DELETE FROM scheduled_events
+			WHERE (id, partition_key) IN (
+			    SELECT id, partition_key FROM scheduled_events
+			    WHERE status IN ('COMPLETED', 'DEAD_LETTER', 'CANCELLED')
+			    AND executed_at < :cutoff
+			    LIMIT :batchSize
+			)
+			""", nativeQuery = true)
 	int deleteCompletedEventsBefore(@Param("cutoff") Instant cutoff, @Param("batchSize") int batchSize);
 
 	/**
@@ -117,21 +133,21 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	 */
 	@Modifying
 	@Query(value = """
-            DELETE FROM scheduled_events 
-            WHERE partition_key BETWEEN :startKey AND :endKey
-            AND status IN ('COMPLETED', 'DEAD_LETTER', 'CANCELLED')
-            """, nativeQuery = true)
+			DELETE FROM scheduled_events
+			WHERE partition_key BETWEEN :startKey AND :endKey
+			AND status IN ('COMPLETED', 'DEAD_LETTER', 'CANCELLED')
+			""", nativeQuery = true)
 	int deleteByPartitionKeyRange(@Param("startKey") int startKey, @Param("endKey") int endKey);
 
 	/**
 	 * Find events due in the immediate future (for pre-loading)
 	 */
 	@Query("""
-            SELECT e FROM ScheduledEvent e 
-            WHERE e.status = :status 
-            AND e.scheduledAt BETWEEN :now AND :until
-            ORDER BY e.scheduledAt ASC
-            """)
+			SELECT e FROM ScheduledEvent e
+			WHERE e.status = :status
+			AND e.scheduledAt BETWEEN :now AND :until
+			ORDER BY e.scheduledAt ASC
+			""")
 	List<ScheduledEvent> findUpcomingEvents(
 			@Param("status") EventStatus status,
 			@Param("now") Instant now,
@@ -142,14 +158,14 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	 */
 	@Modifying
 	@Query("""
-            UPDATE ScheduledEvent e 
-            SET e.status = :newStatus, 
-                e.updatedAt = :now,
-                e.executedAt = :executedAt,
-                e.lockedBy = :lockedBy,
-                e.lockExpiresAt = :lockExpiresAt
-            WHERE e.id = :id AND e.status = :expectedStatus
-            """)
+			UPDATE ScheduledEvent e
+			SET e.status = :newStatus,
+			    e.updatedAt = :now,
+			    e.executedAt = :executedAt,
+			    e.lockedBy = :lockedBy,
+			    e.lockExpiresAt = :lockExpiresAt
+			WHERE e.id = :id AND e.status = :expectedStatus
+			""")
 	int updateStatusAtomically(
 			@Param("id") UUID id,
 			@Param("expectedStatus") EventStatus expectedStatus,
@@ -164,12 +180,28 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	 */
 	@Modifying
 	@Query("""
-            UPDATE ScheduledEvent e 
-            SET e.status = :cancelledStatus, e.updatedAt = :now 
-            WHERE e.externalJobId = :externalJobId AND e.status = :pendingStatus
-            """)
+			UPDATE ScheduledEvent e
+			SET e.status = :cancelledStatus, e.updatedAt = :now
+			WHERE e.externalJobId = :externalJobId AND e.status = :pendingStatus
+			""")
 	int cancelByExternalJobId(
 			@Param("externalJobId") String externalJobId,
+			@Param("now") Instant now,
+			@Param("cancelledStatus") EventStatus cancelledStatus,
+			@Param("pendingStatus") EventStatus pendingStatus);
+
+	/**
+	 * Cancel an event by external job ID and partition key (optimized)
+	 */
+	@Modifying
+	@Query("""
+			UPDATE ScheduledEvent e
+			SET e.status = :cancelledStatus, e.updatedAt = :now
+			WHERE e.externalJobId = :externalJobId AND e.partitionKey = :partitionKey AND e.status = :pendingStatus
+			""")
+	int cancelByExternalJobIdAndPartitionKey(
+			@Param("externalJobId") String externalJobId,
+			@Param("partitionKey") int partitionKey,
 			@Param("now") Instant now,
 			@Param("cancelledStatus") EventStatus cancelledStatus,
 			@Param("pendingStatus") EventStatus pendingStatus);
@@ -178,25 +210,46 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	 * Get statistics for monitoring
 	 */
 	@Query(value = """
-            SELECT status, COUNT(*) as count 
-            FROM scheduled_events 
-            GROUP BY status
-            """, nativeQuery = true)
+			SELECT status, COUNT(*) as count
+			FROM scheduled_events
+			GROUP BY status
+			""", nativeQuery = true)
 	List<Object[]> getStatusStatistics();
 
 	/**
 	 * Check if an event exists by message ID (for idempotency)
 	 */
 	@Query(value = """
-            SELECT EXISTS(
-                SELECT 1 FROM scheduled_events 
-                WHERE external_job_id = :externalJobId 
-                AND source = :source 
-                AND scheduled_at = :scheduledAt
-            )
-            """, nativeQuery = true)
+			SELECT EXISTS(
+			    SELECT 1 FROM scheduled_events
+			    WHERE external_job_id = :externalJobId
+			    AND source = :source
+			    AND scheduled_at = :scheduledAt
+			)
+			""", nativeQuery = true)
 	boolean existsByUniqueKey(
 			@Param("externalJobId") String externalJobId,
 			@Param("source") String source,
 			@Param("scheduledAt") Instant scheduledAt);
+
+	/**
+	 * High-performance bulk insert using PostgreSQL native ON CONFLICT DO NOTHING.
+	 * This prevents DataIntegrityViolationExceptions and allows entire batches to
+	 * be processed in one network round-trip.
+	 */
+	@Modifying
+	@Query(value = """
+			INSERT INTO scheduled_events (
+				id, external_job_id, source, scheduled_at, delivery_type,
+				destination, payload, status, retry_count, max_retries,
+				created_at, updated_at, partition_key
+			) VALUES (
+				:#{#event.id}, :#{#event.externalJobId}, :#{#event.source},
+				:#{#event.scheduledAt}, :#{#event.deliveryType.name()},
+				:#{#event.destination}, cast(:#{#event.payload} as jsonb),
+				:#{#event.status.name()}, :#{#event.retryCount}, :#{#event.maxRetries},
+				:#{#event.createdAt}, :#{#event.updatedAt}, :#{#event.partitionKey}
+			) ON CONFLICT (external_job_id, source, scheduled_at, partition_key) DO NOTHING
+			""", nativeQuery = true)
+	int insertIgnoreDuplicate(@Param("event") ScheduledEvent event);
 }
